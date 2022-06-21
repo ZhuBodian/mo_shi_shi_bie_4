@@ -2,11 +2,10 @@ import matplotlib.pyplot as plt
 from scipy.stats import norm
 import numpy as np
 from numpy import sqrt, pi, exp, log, inf
-from scipy.optimize import minimize
 import tree_class as tc
 from sklearn.metrics import log_loss, mean_absolute_error
 import scipy
-from scipy.optimize import minimize, differential_evolution, NonlinearConstraint, Bounds
+from scipy.optimize import minimize, differential_evolution, NonlinearConstraint, Bounds, LinearConstraint
 
 
 class Utils:
@@ -605,28 +604,46 @@ class LinearClassifier:
 
 class NonLinearClassifier:
     def __init__(self, x, y, eps):
-        self.x = x
+        self.x = x[:, np.newaxis]
         self.y = y[:, np.newaxis]
         self.l = x.shape[0]
         self.eps = eps
 
+        self.delta = 1e-6
+
     def _SVR_optimization_function(self, alpha):
+        # alpha前self.l个元素为式（6-25）中的alpha*,后self.l个元素为alpha
+        eq = np.sum(alpha[:self.l]) - np.sum(alpha[self.l:])
+        alpha = alpha[:, np.newaxis]  # 不这样的话，后续广播机制可能会出错
+
         ans = -self.eps * np.sum(alpha) + np.sum(self.y * (alpha[:self.l] - alpha[self.l:]))
+        temp = 0
         for i in range(self.l):
-            for j in range(self.l):
-                ans = -0.5 * (alpha[i] - alpha[self.l + i]) * (alpha[j] - alpha[self.l + j]) * (self.x[i] * self.x[j])
-        return -1 * ans  # 注意书上要求的是最大值，但是scipy是求最小值
+            temp = temp + (alpha[i] - alpha[self.l + i]) * np.sum((alpha[:self.l] - alpha[self.l:]) * self.x[i] * self.x)
+        ans = ans - 0.5 * temp
+
+        ans = -1 * ans
+        return ans  # 注意书上要求的是最大值，但是scipy是求最小值
 
     def SVR(self, C):
         # 由于Bounds只能识别一维，所以将alpha*与alpha堆叠在一起
-        bounds = Bounds(lb=np.zeros((2 * self.l)), ub=C * np.ones((2 * self.l)))
-        nlc = NonlinearConstraint(lambda alpha: np.sum(alpha[:self.l]) - np.sum(alpha[self.l:]), 0, 0)
-        res = differential_evolution(func=self._SVR_optimization_function, constraints=(nlc), bounds=bounds)
-        omega = np.sum((res.x[:self.l] - res.x[self.l:]) * self.x)
-        a=1
+        # bounds = Bo unds(lb=np.zeros((2 * self.l)), ub=C * np.ones((2 * self.l)))
+        # nlc = NonlinearConstraint(lambda alpha: np.sum(alpha[:self.l]) - np.sum(alpha[self.l:]), 0, 0)
+        # res = differential_evolution(func=self._SVR_optimization_function, constraints=(nlc), bounds=bounds)
+        # omega = np.sum((res.x[:self.l] - res.x[self.l:]) * self.x)
 
+        cons = ({'type': 'eq', 'fun': lambda alpha: np.sum(alpha[:self.l]) - np.sum(alpha[self.l:])})
+        bounds = [(0, C) for i in range(2 * self.l)]
+        x0 = C * np.random.rand(2 * self.l)[:, np.newaxis]
+        res = minimize(fun=self._SVR_optimization_function, x0=x0, bounds=bounds, constraints=cons)
+        alpha_star = res.x[:self.l][:, np.newaxis]
+        alpha = res.x[self.l:][:, np.newaxis]
 
-        return 0
+        omega = np.sum((alpha_star - alpha) * self.x)  # 一定要添加新列！！！
+        b_index = np.where((alpha > (0 + self.delta)) * (alpha < (C - self.delta)))[0]
+        b = sum(self.y[b_index] + self.eps - omega * self.x[b_index]) / b_index.size
+
+        return omega, b
 
 # 原书第六章，神经网络，用于实现BP算法（反向传播计算梯度用的是sigmoid函数进行推导的）
 # 说实话这个算法并不好使，但也懒得改了，所以直接运行肯定会有bug
