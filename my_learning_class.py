@@ -13,12 +13,12 @@ class Utils:
     @staticmethod
     def euc_dist(x1, x2):
         # 方便广播机制
-        if x1.ndim == 1:
-            x1 = x1[:, np.newaxis]
-        if x2.ndim == 1:
-            x2 = x2[:, np.newaxis]
-        if x1.shape[1] != x2.shape[1]:
-            x2 = x2.T
+        # if x1.ndim == 1:
+        #     x1 = x1[:, np.newaxis]
+        # if x2.ndim == 1:
+        #     x2 = x2[:, np.newaxis]
+        # if x1.shape[1] != x2.shape[1]:
+        #     x2 = x2.T
 
         return sqrt(np.sum((x1 - x2) * (x1 - x2), axis=1))
 
@@ -879,12 +879,14 @@ class NonParLearning:
 
 # 第11章聚类，都是二维聚类
 class Cluster:
-    def __init__(self, x, method):
+    def __init__(self, x, method, ini_centers=None):
         self.x = x
         self.N = x.shape[0]
         self.dim = x.shape[1]
         assert method in ['c_mean']
         self.method = method
+        self.ini_centers = ini_centers
+
 
     def transform(self, c=None, N=10):
         if self.method == 'c_mean':
@@ -894,20 +896,24 @@ class Cluster:
 
     def _c_mean_transorm(self, c, N):
         self.c = c
-        m = self._first_center()
+        if self.ini_centers is None:
+            m = self._first_center()
+        else:
+            m = self.ini_centers
+
         label = self._first_cluster(m)
         cluster_sample_nums = self._cal_cluster_sample_nums(label)
 
         unchange_nums = 0
-        sameple_nums = np.empty((self.c, 1))
         cal_rho_j = lambda N_j, y, m_j: N_j / (N_j + 1) * Utils.euc_dist(y, m_j) ** 2
         cal_rho_i = lambda N_i, y, m_j: N_i / (N_i - 1) * Utils.euc_dist(y, m_j) ** 2
         while 1:
+            # 随机抽取一个样本
             while 1:
                 idx = np.random.randint(low=0, high=self.N, size=1)
-                i = label[idx]
-                y = self.x[idx, :]
-                if cluster_sample_nums[i] > 1:
+                i = label[idx]  # 该样本类别
+                y = self.x[idx, :]  # 该样本样本坐标
+                if cluster_sample_nums[i] > 1:  # 如果N_i=1，则重新取样本点
                     break
 
             rho_js = np.empty((self.c - 1, 1))
@@ -916,20 +922,23 @@ class Cluster:
             for j in range(self.c):
                 if j == i:
                     continue
-                rho_js[iter] = cal_rho_j(sameple_nums[j], y, m[j])
-                rho_js_label = j
+                rho_js[iter] = cal_rho_j(cluster_sample_nums[j], y, m[j])
+                rho_js_label[iter] = j
                 iter += 1
-            rho_i = cal_rho_i(sameple_nums[i], y, m[i])
+            rho_i = cal_rho_i(cluster_sample_nums[i], y, m[i])
 
             if min(rho_js) < rho_i:
-                k = rho_js_label[rho_js == min(rho_js)]
+                k = rho_js_label[np.where(rho_js == min(rho_js))[0][0]]
                 label[idx] = k
                 m = self._cal_center(label)
+
+                cluster_sample_nums[i] -= 1
+                cluster_sample_nums[int(k)] += 1
                 unchange_nums = 0
             else:
                 unchange_nums += 1
 
-            if unchange_nums == 10:
+            if unchange_nums == N:
                 break
         return label
 
@@ -950,7 +959,7 @@ class Cluster:
         # P2491，且是欧式距离
         label = -1 * np.ones(self.N, dtype=np.int8)
         for i in range(self.N):
-            dist = Utils.euc_dist(self.x[i, :], centers)
+            dist = Utils.euc_dist(self.x[i, :][np.newaxis, :], centers)
             label[i] = np.where(dist == min(dist))[0]
         return label
 
