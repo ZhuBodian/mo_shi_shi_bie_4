@@ -400,52 +400,39 @@ class LinearClassifier:
             self.label = label
         self.alg = None
         self.prior = prior
-        self._decision_function = None  # 二类二维为一条直线的函数（因为形式简单，就写为了显式y=f(x)）
+        self.decision_function = None  # 二类二维为一条直线的函数（因为形式简单，就写为了显式y=f(x)）
         self._predict_rule = None  # 返回x是否满足式(5-48)大于号的bool数组,要给出包含横纵坐标的向量(注意为列向量)
         self.linear_equation = None
 
     def fisher_fit(self):
         self.alg = 'fisher'
-        data0 = self.data[np.where(self.label == 0)]
-        data1 = self.data[np.where(self.label == 1)]
+        data0 = self.data[np.where(self.label == -1)[0], :]
+        data1 = self.data[np.where(self.label == 1)[0], :]
 
         # 一维数组无法直接转置
-        mean0 = np.mean(data0, axis=0)
-        mean1 = np.mean(data1, axis=0)
-        mean0.shape = (1, 2)
-        mean0 = mean0.T
-        mean1.shape = (1, 2)
-        mean1 = mean1.T
+        mean0 = np.mean(data0, axis=0)[np.newaxis, :]
+        mean1 = np.mean(data1, axis=0)[np.newaxis, :]
 
         S0 = 0
-        temp = data0 - mean0.T
+        temp = data0 - mean0
         for i in range(data0.shape[0]):
-            temp2 = temp[i, :]  #
-            temp2.shape = (1, 2)
-            S0 = S0 + np.dot(temp2.T, temp2)
+            temp2 = temp[i, :][:, np.newaxis]  #
+            S0 = S0 + temp2.dot(temp2.T)
 
         S1 = 0
-        temp = data1 - mean1.T
+        temp = data1 - mean1
         for i in range(data1.shape[0]):
-            temp2 = temp[i, :]  #
-            temp2.shape = (1, 2)
-            S1 = S1 + np.dot(temp2.T, temp2)
+            temp2 = temp[i, :][:, np.newaxis]  #
+            S1 = S1 + temp2.dot(temp2.T)
 
         Sw = S0 + S1
 
-        omega = np.dot(np.linalg.inv(Sw), (mean0 - mean1))
-        # 直线y=f(x)的显式函数式
-        self._decision_function = lambda x0: (log(self.prior[1] / self.prior[0]) - omega[0] * (
-                x0 - 0.5 * (mean0[0] + mean1[0]))) / omega[1] + 0.5 * (mean0[1] + mean1[1])
-        # 返回布尔型数组，要注意如果写>=，那么ture（1）代表0类，false（0）代表1类
-        self._predict_rule = lambda x: np.dot(omega.T, x - 0.5 * (mean0 + mean1)) < log(self.prior[1] / self.prior[0])
-        # 记录二类二维的y=f（x）字符串表达式,这里面的求的数值shape都是(N,1)的
-        self.linear_equation = 'y=' + \
-                               str((- omega[0] / omega[1])[0]) + \
-                               '*x+' + \
-                               str(((log(self.prior[1] / self.prior[0]) +
-                                     omega[0] * 0.5 * (mean0[0] + mean1[0])) / omega[1] +
-                                    0.5 * (mean0[1] + mean1[1]))[0])
+        omega = np.linalg.inv(Sw).dot((mean0 - mean1).T)
+
+        # label 为0-1变量
+        self._predict_rule = lambda x: -1 * np.sign((x - 0.5 * (mean0 + mean1)).dot(omega) - np.log(self.prior[1] / self.prior[0]))
+
+        return omega, mean0.T, mean1.T
 
     # 绘制决策平面
     def plot(self):
@@ -473,7 +460,7 @@ class LinearClassifier:
         if self.alg == 'fisher':
             # 这个返回的虽然是一维数组，但是shape是(N,1)，而不是(N,1)，在variable界面中显示的是[[True, False,...]]，
             # 所以第一个sum只会将其变为[1, 0,...]，外面再加一个sum才会得到一个整数
-            return sum(self._predict_rule(x))
+            return self._predict_rule(x)
         elif self.alg == 'perceptron' or self.alg == 'lms':
             x = np.vstack((np.ones(x.shape[1]), x))
             return self._predict_rule(x)
@@ -996,3 +983,8 @@ class Cluster:
     # 计算各类样本的数目
     def _cal_cluster_sample_nums(self, label):
         return np.array([sum(label == i) for i in range(self.c)])
+
+
+# 原书8.5 Boosting集成学习
+# class Bossting:
+#     def __init__(self,data, label, M):
