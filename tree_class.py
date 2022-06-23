@@ -89,6 +89,7 @@ class Find:
         self.tn = tn  # 是Node型变量，不是tree（所以应该传入的是一个tree变量的root属性）
         self.target_node = None
 
+    # 搜寻树的val属性
     def preorder(self, target_val):
         # 如果树中不存在target_val，返回None
         if self.tn.val == target_val:
@@ -99,6 +100,21 @@ class Find:
                 continue
             else:
                 if self.target_node.val == target_val:
+                    break
+
+        return self.target_node
+
+    # 搜寻树中哪个叶节点的idxs包含idx
+    def preorder_idx(self, idx):
+        # 如果树中不存在target_val，返回None
+        if idx in self.tn.idxs and (len(self.tn.child) == 0):
+            return self.tn
+        for i in self.tn.child:
+            self.target_node = Find(i).preorder_idx(idx)
+            if self.target_node is None:  # 到达叶节点
+                continue
+            else:
+                if idx in self.target_node.idxs:
                     break
 
         return self.target_node

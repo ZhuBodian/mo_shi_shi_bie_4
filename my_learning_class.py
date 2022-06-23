@@ -5,6 +5,7 @@ from numpy import sqrt, pi, exp, log, inf
 import tree_class as tc
 from sklearn.metrics import log_loss, mean_absolute_error
 import scipy
+import tree_class
 from scipy.optimize import minimize, differential_evolution, NonlinearConstraint, Bounds, LinearConstraint
 
 
@@ -751,19 +752,22 @@ class NonParLearning:
     # P179的树搜索算法比较复杂，且针对的是单点的，为了明晰，把这个单独提出来
     def _bba_single_label(self, x, bba_tree):
         # do step 1
-        B, L = np.inf, 1
+        B, L = np.inf, 0
         p = bba_tree.root
         not_terminate = True
         # NN_array = -1 * np.ones(k, dtype=np.int32)
         # d_x_xi_array = np.array([np.inf for i in range(k)])
 
         cal_node_list = []
+        succeed_nodes = []
 
         while not_terminate:
             # do step 2
             cur_node = p
-            succeed_nodes = [child for i, child in enumerate(cur_node.child)]  # list of str
-            d_x_Mp = np.array([Utils.euc_dist(x, element.Mp) for i, element in enumerate(succeed_nodes)])
+            for child in cur_node.child:
+                succeed_nodes.append(child)  # list of str
+            d_x_Mp = np.array([Utils.euc_dist(x[np.newaxis, :], node.Mp[np.newaxis, :]) for node in succeed_nodes])
+            a=1
             while 1:
                 # do step 3
                 for i in range(len(succeed_nodes) - 1, -1, -1):
@@ -779,9 +783,10 @@ class NonParLearning:
                 else:  # 不满足do step 4条件，跳转step 5
                     # do step 5
                     p_exe_d = min(d_x_Mp)
-                    p_exe = succeed_nodes[np.where(d_x_Mp == p_exe_d)[0][0]]
-                    del succeed_nodes[np.where(d_x_Mp == p_exe_d)[0][0]]
-                    d_x_Mp = np.delete(d_x_Mp, np.where(d_x_Mp == p_exe_d)[0][0])
+                    node_idx = np.where(d_x_Mp == p_exe_d)[0][0]
+                    p_exe = succeed_nodes[node_idx]
+                    del succeed_nodes[node_idx]
+                    d_x_Mp = np.delete(d_x_Mp, node_idx)
                     if (p_exe.depth - 1) == self.L:  # L == self.L
                         # do step 6
                         cal_node_list.append(p_exe.val)
@@ -819,6 +824,23 @@ class NonParLearning:
                         L += 1
                         p = p_exe
                         break
+
+        # 检查该样本点是否正确
+        # temp = Utils.euc_dist(x, self.data)
+        # if not min(temp) == temp[NN][0]:
+        #     print('计算错误'.center(100, '*'))
+        #     cal_idx = NN[0]
+        #     real_idx = np.where(temp == min(temp))[0]
+        #
+        #     traverse_instance = tree_class.Find(bba_tree.root)
+        #     cal_node = traverse_instance.preorder_idx(cal_idx)
+        #     real_node = traverse_instance.preorder_idx(real_idx)
+        #
+        #     print(f'当前x计算出的的最近邻为样本为：{cal_idx}；计算节点为{cal_node.val}')
+        #     print(f'当前x真实的最近邻为样本为：{real_idx}；真实节点为{real_node.val}')
+        #
+        # else:
+        #     print('计算正确'.center(100, '*'))
         return self.label[NN]
 
     def transform(self, x, k=1):
@@ -858,16 +880,24 @@ class NonParLearning:
 
     # 将当前集合的索引，再均匀分为l份
     def _cal_idxs(self, idxs):
-        instance = Cluster(self.test_data[idxs, :], 'c_mean')
-        label = instance.transform(self.l)
-        ans_list = [idxs[np.where(label == i)] for i in range(self.l)]
+        # 不知道当初为啥这样写
+        # instance = Cluster(self.test_data[idxs, :], 'c_mean')
+        # label = instance.transform(self.l)
+        # ans_list = [idxs[np.where(label == i)] for i in range(self.l)]
+
+        temp = idxs.copy()
+        np.random.shuffle(temp)
+        step = int(idxs.shape[0] / self.l)
+        ans_list = [temp[i*step:(i+1)*step] for i in range(self.l - 1)]
+        ans_list.append(temp[(self.l-1)*step:])
+
         return ans_list
 
     def _cal_Np_Mp_rp(self, idxs):
         # idxs: list of array
         cal_Np = lambda idx: idx.shape[0]
         cal_Mp = lambda idx: np.mean(self.data[idx, :], axis=0)
-        cal_rp = lambda idx: max(Utils.euc_dist(cal_Mp(idx), self.data[idx]))
+        cal_rp = lambda idx: max(Utils.euc_dist(cal_Mp(idx)[np.newaxis, :], self.data[idx]))
         Np, Mp, rp = [], [], []
         for i in range(len(idxs)):
             Np.append(cal_Np(idxs[i]))
@@ -922,7 +952,7 @@ class Cluster:
             for j in range(self.c):
                 if j == i:
                     continue
-                rho_js[iter] = cal_rho_j(cluster_sample_nums[j], y, m[j])
+                rho_js[iter] = cal_rho_j(cluster_sample_nums[j], y, m[j][np.newaxis, :])
                 rho_js_label[iter] = j
                 iter += 1
             rho_i = cal_rho_i(cluster_sample_nums[i], y, m[i])
