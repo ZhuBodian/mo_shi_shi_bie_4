@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import mpmath
 from scipy.stats import norm
 import numpy as np
 from numpy import sqrt, pi, exp, log, inf
@@ -7,6 +8,7 @@ from sklearn.metrics import log_loss, mean_absolute_error
 import scipy
 import tree_class
 from scipy.optimize import minimize, differential_evolution, NonlinearConstraint, Bounds, LinearConstraint
+from sklearn.metrics import accuracy_score
 
 
 class Utils:
@@ -986,5 +988,106 @@ class Cluster:
 
 
 # 原书8.5 Boosting集成学习
-# class Bossting:
-#     def __init__(self,data, label, M):
+class Bossting:
+    # 均是使用Fisher判别分类器
+    def __init__(self, data, label, M, eps=0.45, ini_rho=0.1, max_iter=1000):
+        self.data = data
+        self.label = label
+        self.N = data.shape[0]
+        self.y_original = np.hstack((np.array(self.N * [1])[:, np.newaxis], data))
+        self.y = np.hstack((np.array(self.N * [1])[:, np.newaxis], data))
+        self.y[np.where(self.label == -1)[0]] = -1 * self.y[np.where(self.label == -1)[0]]  # w2=-1
+        self.M = M
+        self.N = data.shape[0]
+        self.omega = np.array(self.N*[1/self.N])[:, np.newaxis]
+        self.eps = eps
+        self.rho = lambda iter: ini_rho + iter * (-0.9 * ini_rho) / max_iter  # 线性减少的学习率，最终学习率为原来的1/10
+        self.max_iter = max_iter
+        self.classifiers = dict(alpha=[], cm=[], acc=[])
+        self._mse = lambda alpha: np.sum(self.omega * (self.y.dot(alpha) - 1)**2)
+
+    def lms(self):
+        alpha = np.random.rand(self.data.shape[1] + 1, 1)
+        iter_times = 0
+        run_while = True
+        while run_while:
+            for i, y in enumerate(self.y):
+                y = y[:, np.newaxis]
+                if np.abs(1 - (y.T).dot(alpha)) > 1e-6:  # 但其实我就没见<=的
+                    alpha = alpha + self.rho(iter_times) * (1 - (y.T).dot(alpha)) * y * self.omega[i]
+                    iter_times += 1
+
+                if (self._mse(alpha) < self.eps) or (iter_times >= self.max_iter):
+                    run_while = False
+                    break
+
+        return alpha
+
+    def predict(self, alpha):
+        predict_label = np.sign(self.y_original.dot(alpha))
+        return predict_label, accuracy_score(self.label, predict_label)
+
+    def start_boost(self):
+        for i in range(self.M):
+            alpha = self.lms()
+            self.classifiers['alpha'].append(alpha)
+
+            predict_label, acc = self.predict(alpha)
+            self._plot_with_alpha(alpha, acc, predict_label)
+
+            em = 1 - acc
+            cm = np.log((1 - em) / em)
+            self.classifiers['acc'].append(acc)
+            self.classifiers['cm'].append(cm)
+
+            indictor_idx = (predict_label != self.label[:, np.newaxis])
+            self.omega = self.omega * np.exp(cm * indictor_idx)
+            self.omega = self.omega / sum(self.omega)
+
+            a=1
+
+    def boost_predict(self):
+        f_m_x = np.empty([self.N, self.M])
+        for i in range(self.M):
+            f_m_x[:, i][:, np.newaxis] = self.predict(self.classifiers['alpha'][i])[0]
+
+        cm_array = np.array(self.classifiers['cm'])[np.newaxis, :]
+        acc_array = np.array(self.classifiers['acc'])[np.newaxis, :]
+
+        predict_label = np.sign(np.sum(cm_array * f_m_x, axis=1))
+
+        temp = cm_array * f_m_x
+        cm_array = cm_array.T
+        acc_array = acc_array.T
+        real_label = self.label[:, np.newaxis]
+        predict_label = predict_label[: ,np.newaxis]
+
+
+        return predict_label, accuracy_score(self.label, predict_label)
+
+
+    def _plot_with_alpha(self, alpha, acc, predictlabel):
+        k = - alpha[1] / alpha[2]
+        b = - alpha[0] / alpha[2]
+
+        data = self.data
+        label = self.label
+        left_right = np.array([1.1 * min(data[:, 0]), 1.1 * max(data[:, 0])])
+        data0 = data[np.where(label == -1)[0]]
+        data1 = data[np.where(label == 1)[0]]
+        f = lambda x: k * x + b
+        label_use_decision = np.sign(f(data[:, 0])-data[:, 1])
+        decision_acc = sum(label_use_decision == label) / self.N
+
+        plt.figure()
+        plt.plot(data1[:, 0], data1[:, 1], '^', label='class 1 (w_1)')
+        plt.plot(data0[:, 0], data0[:, 1], 'o', label='class -1 (w_2)')
+        plt.plot(left_right, f(left_right), label='decision curve')
+
+        plt.title(f'acc:{acc}; decision_acc: {decision_acc}')
+        plt.legend()
+
+        plt.show()
+
+
+
