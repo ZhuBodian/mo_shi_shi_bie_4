@@ -9,6 +9,8 @@ import scipy
 import tree_class
 from scipy.optimize import minimize, differential_evolution, NonlinearConstraint, Bounds, LinearConstraint
 from sklearn.metrics import accuracy_score
+import pandas as pd
+from scipy.optimize import curve_fit
 
 
 class Utils:
@@ -1088,6 +1090,162 @@ class Bossting:
         plt.legend()
 
         plt.show()
+
+
+# 第九章，特征选择
+class FeatureSelection:
+    def __init__(self, data, label, d, prior):
+        self.data = data
+        self.label = label
+        self.d = d
+        self.prior = prior
+
+        self.N = self.data.shape[0]
+        self.D = self.data.shape[1]
+        self.c = len(np.unique(label))
+
+
+    def J1(self, x):
+        x_0 = x[np.where(self.label == -1)[0]]
+        x_1 = x[np.where(self.label == 1)[0]]
+
+        mu = np.mean(x, axis=0)[:, np.newaxis]
+        mu_0 = np.mean(x_0, axis=0)[:, np.newaxis]
+        mu_1 = np.mean(x_1, axis=0)[:, np.newaxis]
+
+        S_b = self.prior[0] * (mu_0 - mu).dot((mu_0 - mu).T)
+        S_b += self.prior[1] * (mu_1 - mu).dot((mu_1 - mu).T)
+
+        temp = 0
+        for i, x_k in enumerate(x_0):
+            x_k = x_k[:, np.newaxis]
+            temp += (x_k - mu_0).dot((x_k - mu_0).T)
+        temp = temp / x_0.shape[0]
+        S_w = self.prior[0] * temp
+
+        temp = 0
+        for i, x_k in enumerate(x_1):
+            x_k = x_k[:, np.newaxis]
+            temp += (x_k - mu_1).dot((x_k - mu_1).T)
+        temp = temp / x_1.shape[0]
+        S_w += self.prior[1] * temp
+
+        J1 = np.trace(S_b + S_w)
+
+        return J1
+
+# 第11章 非监督学习与聚类
+# 单峰子集分离
+class UnimodalSeperate:
+    def __init__(self, data0, data1, data2, label):
+        self.data0 = data0
+        self.data1 = data1
+        self.data2 = data2
+        self.data = np.vstack((data0, data1, data2))
+        self.N = self.data.shape[0]
+        self.label = label
+        self.mean = None
+        self.df = None
+
+        left, bottom = np.min(self.data, axis=0)[0], np.min(self.data, axis=0)[1]
+        right, top = np.max(self.data, axis=0)[0], np.max(self.data, axis=0)[1]
+        horizontal_step = (right - left) / 10
+        vertical_step = (top - bottom) / 10
+        left -= horizontal_step
+        right += horizontal_step
+        bottom -= vertical_step
+        top += vertical_step
+
+        self.left = left
+        self.right = right
+        self.bottom = bottom
+        self.top = top
+
+
+    def my_plot(self, fun0, fun1, fun_label):
+        plt.figure()
+        plt.plot(self.data0[:, 0], self.data0[:, 1], 'r^', label='class 0', alpha=0.1)
+        plt.plot(self.data1[:, 0], self.data1[:, 1], 'gv', label='class 1', alpha=0.1)
+        plt.plot(self.data2[:, 0], self.data2[:, 1], 'bx', label='class 2', alpha=0.1)
+
+        plt.plot([self.left, self.right], [fun0(self.left), fun0(self.right)],  'k', label=fun_label + '0')
+        plt.plot([self.left, self.right], [fun1(self.left), fun1(self.right)], 'c--', label=fun_label + '1')
+
+        plt.legend(loc='upper left')
+        plt.xlim(self.left, self.right)
+        plt.ylim(self.bottom, self.top)
+        plt.show()
+
+    def pca(self):
+        mean = np.mean(self.data, axis=0)[np.newaxis, :]
+        self.mean = mean
+
+        data_shift = self.data - mean
+        cov = data_shift.T.dot(data_shift) / (self.N - 1)
+        eig, vec = np.linalg.eig(cov)
+
+        dic = {'eig': [eig[0], eig[1]],
+               'vec': [vec[:, 0], vec[:, 1]]}
+        df = pd.DataFrame(dic)
+        df_sort = df.sort_values(by='eig', ascending=False)
+        self.df = df_sort
+
+    def hist_estimation(self, direction):
+        v = self.data.dot(self.df['vec'].iloc[direction][:, np.newaxis])
+        cabin_num = 100
+        v0_sort = np.sort(v, axis=0)
+
+        plt.show()
+        n, bins, patches = plt.hist(v0_sort, cabin_num, density=True, facecolor='g', alpha=0.75)
+        plt.xlabel('Projected data')
+        plt.ylabel('Probability')
+        plt.title(f'Direction {direction}')
+        plt.grid(True)
+        plt.show()
+
+        return n, bins
+
+    def decision_line(self, direction, p_v, section):
+        vec0 = self.df['vec'].iloc[direction]
+        v = self.data.dot(vec0[:, np.newaxis])
+        possible_section = list(map(int,input('请输入密度函数波谷的所在区间（空格分割）：').split(" ")))
+        assert possible_section[0] < possible_section[1], '区间作值应小于右值'
+        dic = {'p_v': [item for item in p_v],
+               'left': [item for item in section[:-1]],
+               'right': [item for item in section[1:]]}
+        df = pd.DataFrame(dic)
+        idx_start = np.where((df['left']>possible_section[0])==True)[0][0]
+        idx_end = np.where((df['right']<possible_section[1]) == True)[0][-1]
+
+        min_p_v = min(df['p_v'][idx_start:(idx_end + 1)])
+        min_idx = np.where(df['p_v']==min_p_v)[0][0]
+        min_projected_val = (df['left'][min_idx] + df['right'][min_idx])/2
+
+        fun = lambda x: vec0[0] / vec0[1] * (x - self.mean[0][0]) + self.mean[0][1]
+        return fun
+
+    def run(self):
+        self.pca()
+
+        vec0 = self.df['vec'].iloc[0]
+        fun0 = lambda x: vec0[0]*(self.mean[0][0] - x) / vec0[1] + self.mean[0][1]
+        vec1 = self.df['vec'].iloc[1]
+        fun1 = lambda x: vec1[0]*(self.mean[0][0] - x) / vec1[1] + self.mean[0][1]
+        self.my_plot(fun0, fun1, 'project direction')
+
+        direction = 0
+        p_v, section = self.hist_estimation(direction)
+        fun0 = self.decision_line(direction, p_v, section)
+
+        direction = 1
+        p_v, section = self.hist_estimation(direction)
+        fun1 = self.decision_line(direction, p_v, section)
+
+        self.my_plot(fun0, fun1, 'decision_line')
+
+
+
+
 
 
 
