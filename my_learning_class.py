@@ -105,6 +105,16 @@ class Utils:
                 break
         return item
 
+    @staticmethod
+    def plot_bound(data, ratio=1.1):
+        left, right = min(data[:, 0]), max(data[:, 0])
+        bottom, top = min(data[:, 1]), max(data[:, 1])
+        left , right, bottom, top = ratio * left, ratio * right, ratio * bottom, ratio * top
+
+        return left , right, bottom, top
+
+
+
 
 # 原书第三章，概率密度函数的估计
 class PDFEstimation:
@@ -472,6 +482,10 @@ class LinearClassifier:
             return self._predict_rule(x)
         elif self.alg == 'kernal_svm':
             return np.array([self._predict_func(x[i, :]) for i in range(x.shape[0])])
+        elif self.alg == 'linear_svm':
+            decision_x_1 = self._decision_function(x[:,0])
+            return -2 * (x[:,1]>decision_x_1) + 1
+
 
     # 返回当前方法的准确率,如果不输入数据，就计算经验误差4
     def score(self, data=None, label=None):
@@ -523,15 +537,21 @@ class LinearClassifier:
         self.linear_equation = 'y=' + str((-alpha[1] / alpha[2])[0]) + '*x+' + str((-alpha[0] / alpha[2])[0])
 
     # 线性支持向量机
-    def linear_svm(self, c):
+    def linear_svm(self, c, G=None):
         self.alg = 'linear_svm'
         self.kernal = Utils().linear_kernal
-        # alpha_i 本身无上界，但是用differential_evolution的话，一方面不能用np.inf，必须用具体值很多alph_i会接近上限，那还不如确定个低上界
-        bounds = Bounds(lb=self.N * [0], ub=self.N * [c])
-        nlc = NonlinearConstraint(lambda alpha: sum(self.label * alpha[:, np.newaxis])[0], 0, 0)
-        res = differential_evolution(self._optimization_function, constraints=(nlc), bounds=bounds)
+        if G is None:
+            ub = self.N * [c]
+        else:
+            ub = np.array(self.N * [c]) * G
 
-        temp = sum(self.label * res.x[:, np.newaxis])
+        # alpha_i 本身无上界，但是用differential_evolution的话，一方面不能用np.inf，必须用具体值很多alph_i会接近上限，那还不如确定个低上界
+        bounds = Bounds(lb=self.N * [0.], ub=ub)
+        nlc = NonlinearConstraint(lambda alpha: sum(self.label * alpha[:, np.newaxis])[0], 0, 0)
+        # hess = -0.5 * self.label.dot(self.label.T) * self.data.dot(self.data.T)
+
+        res = minimize(self._optimization_function, x0=self.N * [0.], constraints=(nlc), bounds=bounds)
+
         e = 1e-5
         alpha = res.x[:, np.newaxis]
         omega = sum(alpha * self.label * self.data)
