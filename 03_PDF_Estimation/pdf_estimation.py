@@ -200,9 +200,7 @@ def run_histogram(n=10000, k=100):
     """
     print(f'直方图方法'.center(100, '*'))
 
-    mu = 0
-    sig2 = 1
-    x = np.sort(np.random.normal(mu, sqrt(sig2), n))
+    x = normal_model_sample(n)
     
     instance = NonParmEstimation(x)
     instance.hist(k)
@@ -214,9 +212,7 @@ def run_k_n_neighbor(n=10000, k_n=100):
     """
     print(f'K_N近邻法估计'.center(100, '*'))
 
-    mu = 0
-    sig2 = 1
-    x = np.sort(np.random.normal(mu, sqrt(sig2), n))
+    x = normal_model_sample(n)
 
     instance = NonParmEstimation(x)
     instance.k_n_neighbor(k_n)
@@ -228,13 +224,18 @@ def run_parzen(n=10000, h=0.01, line_sample_n=10000):
     """
     print(f'Parzen窗法'.center(100, '*'))
 
-    mu = 0
-    sig2 = 1
-    x = np.sort(np.random.normal(mu, sqrt(sig2), n))
+    x = normal_model_sample(n)
 
     instance = NonParmEstimation(x)
     instance.parzen(h, line_sample_n)
 
+
+def normal_model_sample(n):
+    mu = 0
+    sig2 = 1
+    x = np.sort(np.random.normal(mu, sqrt(sig2), n))
+
+    return x
 
 if __name__ == '__main__':
     np.random.seed(42)
