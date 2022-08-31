@@ -175,9 +175,10 @@ def model_example2():
     return A, E, Pi, Q, V
 
 
-def run_evaluation_decoding(A, E, Pi, O, Q, V):
+def run_evaluation_decoding():
     print(f'模型的评估问题'.center(100, '*'))
 
+    A, E, Pi, O, Q, V = model_example()
     instance = HMM(A=A, E=E, Pi=Pi, O=O, Q=Q, V=V)
 
     print('前向算法'.center(50, '*'))
@@ -190,10 +191,11 @@ def run_evaluation_decoding(A, E, Pi, O, Q, V):
     print(instance.viterbi())
 
 
-def run_learning(A, E, Pi, Q, V, n, iter_times):
+def run_learning(n, iter_times):
     print('模型的学习问题'.center(100, '*'))
 
     # 利用真实的模型参数模型参数，生成一观测序列与对应的隐状态
+    A, E, Pi, Q, V = model_example2()
     real_instance = HMM(A=A, E=E, Pi=Pi, Q=Q, V=V)
     real_instance.create_random_O(n)
 
@@ -209,24 +211,27 @@ def run_learning(A, E, Pi, Q, V, n, iter_times):
     print('知道隐状态序列'.center(50, '*'))
     estimate_instance = HMM(A=A2, E=E2, Pi=Pi2, Q=Q, V=V, O=real_instance.O)
     A_hat, E_hat = estimate_instance.know_x(real_instance.x)
+    print(f'状态转移矩阵A真实值: \n {np.around(A, 2)}')
     print(f'状态转移矩阵A估计差值: \n {np.around(A - A_hat, 2)}')
     print(f'发射概率矩阵E估计差值: \n {np.around(E - E_hat, 2)}')
+    print(f'状态转移矩阵E真实值: \n {np.around(E, 2)}')
 
     print('不知道隐状态序列'.center(50, '*'))
     estimate_instance2 = HMM(A=A2, E=E2, Pi=Pi2, Q=Q, V=V, O=real_instance.O)
     A_hat, E_hat, Pi_hat = estimate_instance2.not_know_x(iter_times)  # not_know_x方法并更新了类属性
     print(f'状态转移矩阵A估计差值: \n {np.around(A - A_hat, 2)}')
+    print(f'状态转移矩阵A真实值: \n {np.around(A, 2)}')
     print(f'发射概率矩阵E估计差值: \n {np.around(E - E_hat, 2)}')
+    print(f'状态转移矩阵E真实值: \n {np.around(E, 2)}')
     print(f'发射概率矩阵Pi估计差值: \n {np.around(Pi - Pi_hat, 2)}')
+    print(f'状态转移矩阵Pi真实值: \n {np.around(Pi, 2)}')
 
 
 if __name__ == '__main__':
     np.random.seed(29)
 
-    # A, E, Pi, O, Q, V = model_example()
-    # run_evaluation_decoding(A, E, Pi, O, Q, V)
+    # run_evaluation_decoding()
 
     # n = 100
     # iter_times = 200
-    # A, E, Pi, Q, V = model_example2()
-    # run_learning(A, E, Pi, Q, V, n, iter_times)
+    # run_learning(n, iter_times)
